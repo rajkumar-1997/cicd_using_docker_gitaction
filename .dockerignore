@@ -1,0 +1,10 @@
+node_modules/
+*.log
+*.md
+*.git
+.env
+
+test
+dist
+
+docker-compose.yml
