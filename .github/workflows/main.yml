@@ -1,0 +1,90 @@
+name: nestjs cicd using docker
+
+on:
+# event 
+ push:
+   branches:
+     - master
+
+jobs:
+  build:
+   runs-on: self-hosted
+   steps:
+     # Checkout repository code
+     - name: Checkout code
+       uses: actions/checkout@v3
+      
+     # Setup docker buildx for building docker image
+     - name: Set up Docker buildx
+       uses: docker/setup-buildx-action@v3
+
+     # Cache docker layers to speed up build process
+     - name: Cache Docker layers
+       uses: action/cache@v3
+       with:
+         path: /tmp/.buildx-cache
+         keys: ${{runner.os}}-buildx-${{github.sha}}
+         restore-keys: |
+           ${{ runner.os }}-buildx-
+
+     # Setup Docker for work flow
+     - name: Login in to Docker hub
+       uses: docker/login-action@v3
+       with:
+         username: ${{ secrets.DOCKER_USERNAME }}
+         password: ${{ secrets.DOCKER_PASSWORD }}
+      
+     # Build Dcoker image for nestjs application
+     - name: Build Docker image
+       run: |
+        docker build -t ${{ secrets.DOCKER_USERNAME}}/nestjs-app:latest .
+      
+      # run tests inside Docker container 
+     - name: Run tests inside Docker container
+       run: |
+        docker run --rm  ${{ secrets.DOCKER_USERNAME }}/nestjs-app:latest npm run test
+      
+      # push Docker image
+     - name: Push Docker image to Docker hub
+       run: |
+         docker push ${{ secrets.DOCKER_USERNAME }}/nestjs-app:latest
+    
+
+  deploy:
+   runs-on: self-hosted
+   needs: build
+
+   steps:
+    
+        # Checkout repository code
+     - name: Checkout code
+       uses: actions/checkout@v3
+
+       # SSH into EC2 and deploy the updated container
+     - name: Deploy to AWS EC2 with NGINX reverse proxy
+       env:
+         ENV_FILE: ${{ secrets.ENV_FILE }}
+       run: |
+        echo "${{secrets.EC2_SSH_PRIVATE_KEY}}" > private-key.pem
+        chmod 600 private-key.pem
+
+        # SSH to EC2 instace
+        ssh -i private-key.pem ubuntu@${{secrets.EC2_INSTANCE}} <<EOF
+
+        # Recreate .env file on EC2 instance from GitHub Secrets
+          echo "$ENV_FILE" > .env
+
+        docker pull ${{ secrets.DOCKER_USERNAME }}/nestjs-app:latest
+        
+        # Stop and remove the old container if it exists
+          docker stop nestjs-app || true
+          docker rm nestjs-app || true
+        
+        # Start a new container with the latest image
+           docker run -d --name nestjs-app \
+             --env-file .env \
+             -p 4000:3000 \
+             ${{ secrets.DOCKER_USERNAME }}/nestjs-app:latest
+
+        
+        EOF
