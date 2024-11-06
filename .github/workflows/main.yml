@@ -59,6 +59,9 @@ jobs:
         echo "${{secrets.EC2_SSH_PRIVATE_KEY}}" > private-key.pem
         chmod 600 private-key.pem
 
+        # Add EC2 instance's SSH key to known_hosts to avoid the 'Host key verification failed' error
+        ssh-keyscan -H ${{ secrets.EC2_INSTANCE }} >> ~/.ssh/known_hosts
+
         # SSH to EC2 instace
         ssh -i private-key.pem ubuntu@${{secrets.EC2_INSTANCE}} <<EOF
 
